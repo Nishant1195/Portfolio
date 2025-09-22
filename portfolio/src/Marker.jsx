@@ -6,7 +6,9 @@ const Marker = ({ x, y, type }) => {
       cx={x}
       cy={y}
       r={5}
-      className={`${type === "source" ? "fill-blue-600" : "fill-red-600"} stroke-black stroke-[1]`}
+      className={`stroke-black stroke-[1] ${
+        type === "source" ? "fill-blue-600" : "fill-red-600"
+      }`}
     />
   );
 };

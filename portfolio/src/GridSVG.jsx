@@ -36,11 +36,7 @@ const GridSVG = ({ width, height, spacing, onLineClick, children }) => {
   ));
 
   return (
-    <svg
-      width={width}
-      height={height}
-      className="absolute top-0 left-0 w-full h-full"
-    >
+    <svg width={width} height={height} className="absolute top-0 left-0 w-full h-full">
       {verticalLines}
       {horizontalLines}
       {children}
