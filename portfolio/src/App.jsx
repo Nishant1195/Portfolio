@@ -1,6 +1,8 @@
 import React from "react";
 import GridController from "./components/GridController";
 import PageContainer from "./components/PageContainer";
+import NavButton from "./components/NavButton";
+import { ArrowRight } from "lucide-react";
 
 function App() {
   return (
@@ -55,7 +57,7 @@ function App() {
           </div>
         </PageContainer>
         
-       
+
       </div>
     </div>
   );
