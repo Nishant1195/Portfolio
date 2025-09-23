@@ -1,5 +1,5 @@
 import React from "react";
-import GridController from "./GridController";
+import GridController from "./components/GridController";
 
 function App() {
   return (
