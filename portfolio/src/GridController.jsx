@@ -10,269 +10,224 @@ const GridController = () => {
     width: window.innerWidth,
     height: window.innerHeight,
   });
+
   const [sourcePoint, setSourcePoint] = useState(null);
   const [destinationPoint, setDestinationPoint] = useState(null);
   const [solidLines, setSolidLines] = useState([]);
   const [arrowPosition, setArrowPosition] = useState(null);
-  const isAnimating = useRef(false);
-  const pathRef = useRef([]);
-  const animationRef = useRef(null);
-  const speed = 200; // ms per segment
 
-  // Handle window resize
+  const isAnimating = useRef(false);
+  const animationRef = useRef(null);
+
+  // --- Window resize handling ---
   useEffect(() => {
     const handleResize = () => {
-      // Calculate dimensions that fit complete grid cells
       const width = Math.floor(window.innerWidth / spacing) * spacing;
       const height = Math.floor(window.innerHeight / spacing) * spacing;
       setDimensions({ width, height });
     };
-    handleResize(); // Initial call
+    handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Cleanup animation on unmount
+  // --- Cleanup animation on unmount ---
   useEffect(() => {
     return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
   }, []);
 
-  // Helper function to snap value to grid
+  // --- Snap helper ---
   const snapToGrid = (value) => Math.round(value / spacing) * spacing;
 
-  // Handle clicks on grid lines
-  const handleLineClick = (x, y, lineType, lineIndex) => {
-    if (isAnimating.current) return;
+  const removeDuplicates = (path) => {
+  return path.filter((point, i, arr) => {
+    if (i === 0) return true;
+    return !(point.x === arr[i - 1].x && point.y === arr[i - 1].y);
+  });
+};
 
-    // Use exact click coordinates for the respective line
-    let actualX, actualY;
-    
-    // Calculate grid dimensions in terms of spacing
-    const gridWidth = Math.floor(dimensions.width / spacing) * spacing;
-    const gridHeight = Math.floor(dimensions.height / spacing) * spacing;
 
-    if (lineType === "horizontal") {
-      // For horizontal line, keep exact X within grid bounds, use line's Y
-      actualX = Math.max(0, Math.min(x, gridWidth));
-      actualY = Math.min(lineIndex * spacing, gridHeight);
-    } else {
-      // For vertical line, use line's X within grid bounds, keep exact Y
-      actualX = Math.min(lineIndex * spacing, gridWidth);
-      actualY = Math.max(0, Math.min(y, gridHeight));
-    }
+  // --- Compute Manhattan path ---
+  // --- Compute Manhattan path with real start/end points ---
+// --- Compute path between source and destination (raw line points supported) ---
+// --- Compute path between source and destination (raw line points supported) ---
+const computeGridPath = (source, destination, spacing) => {
+  if (!source || !destination) return [];
 
-    const clickedPoint = { 
-      x: actualX, 
-      y: actualY, 
-      lineType,
-      lineIndex 
-    };
+  const path = [];
 
-    // State management for source and destination
-    if (!sourcePoint) {
-      setSourcePoint(clickedPoint);
-      setDestinationPoint(null);
-      setSolidLines([]);
-      setArrowPosition(null);
-    } else if (sourcePoint.x === clickedPoint.x && sourcePoint.y === clickedPoint.y) {
-      // Clicking on source again - reset everything
-      setSourcePoint(null);
-      setDestinationPoint(null);
-      setSolidLines([]);
-      setArrowPosition(null);
-    } else if (!destinationPoint) {
-      setDestinationPoint(clickedPoint);
-    } else if (destinationPoint.x === clickedPoint.x && destinationPoint.y === clickedPoint.y) {
-      // Clicking on destination again - remove it
-      setDestinationPoint(null);
-      setSolidLines([]);
-      setArrowPosition(null);
-    } else {
-      // Set new destination
-      setDestinationPoint(clickedPoint);
-    }
-  };
+  // Start point
+  path.push({ x: source.x, y: source.y });
 
-  // Start path animation when source & destination are set
-  useEffect(() => {
-    if (!sourcePoint || !destinationPoint) return;
-    
-    // Calculate the grid-aligned path
-    const path = computeGridPath(sourcePoint, destinationPoint);
-    pathRef.current = path;
-    
-    // Reset and start animation
-    setSolidLines([]);
-    setArrowPosition({ x: path[0].x, y: path[0].y, angle: 0 });
-    isAnimating.current = true;
-    
-    animateArrow(path);
-    
-    // Cleanup function
-    return () => {
-      isAnimating.current = false;
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-    };
-  }, [sourcePoint, destinationPoint]);
-
-  // Grid-aligned path computation
-  const computeGridPath = (start, end) => {
-    const path = [];
-    
-    // Start point
-    path.push({ x: start.x, y: start.y });
-    
-    // If points are on different types of lines
-    if (start.lineType !== end.lineType) {
-      // Find intersection point
-      const intersection = {
-        x: start.lineType === 'vertical' ? start.x : end.x,
-        y: start.lineType === 'horizontal' ? start.y : end.y
-      };
-      path.push(intersection);
-    }
-    // If points are on parallel lines
-    else {
-      if (start.lineType === 'horizontal') {
-        // Both on horizontal lines - use vertical line as bridge
-        const midX = (start.x + end.x) / 2;
-        path.push({ x: midX, y: start.y });
-        path.push({ x: midX, y: end.y });
-      } else {
-        // Both on vertical lines - use horizontal line as bridge
-        const midY = (start.y + end.y) / 2;
-        path.push({ x: start.x, y: midY });
-        path.push({ x: end.x, y: midY });
-      }
-    }
-    
-    // End point
-    path.push({ x: end.x, y: end.y });
-    
+  // Case 1: Same row or same column → straight line
+  if (source.y === destination.y || source.x === destination.x) {
+    path.push({ x: destination.x, y: destination.y });
     return path;
-  };
+  }
 
-  // Animate arrow along grid path using requestAnimationFrame
+  // Case 2: Different row & column → make an "L" shape
+  // Decide routing: horizontal first or vertical first
+  if (source.lineType === "horizontal") {
+    // Horizontal line point: go horizontally first, then vertically
+    path.push({ x: destination.x, y: source.y });
+  } else {
+    // Vertical line point: go vertically first, then horizontally
+    path.push({ x: source.x, y: destination.y });
+  }
+
+  // End point
+  path.push({ x: destination.x, y: destination.y });
+
+  return path;
+};
+
+
+
+  // --- Animate arrow step by step ---
   const animateArrow = (path) => {
-    if (path.length < 2) {
-      isAnimating.current = false;
-      return;
-    }
+    if (path.length < 2) return;
 
     let currentSegment = 0;
-    const segments = [];
-    
-    // Pre-calculate all segments
-    for (let i = 0; i < path.length - 1; i++) {
-      segments.push({
-        from: path[i],
-        to: path[i + 1],
-        distance: Math.sqrt(
-          Math.pow(path[i + 1].x - path[i].x, 2) + 
-          Math.pow(path[i + 1].y - path[i].y, 2)
-        )
-      });
-    }
 
     const animateSegment = () => {
-      if (currentSegment >= segments.length) {
+      if (currentSegment >= path.length - 1) {
         isAnimating.current = false;
         return;
       }
 
-      const segment = segments[currentSegment];
-      const startTime = performance.now();
-      
-      // Calculate segment duration based on distance
-      const segmentDuration = (segment.distance / spacing) * speed;
+      const from = path[currentSegment];
+      const to = path[currentSegment + 1];
+      const isHorizontal = from.y === to.y;
 
-      const animate = (currentTime) => {
+      let progress = 0;
+      const step = 5; // px per frame
+      const distance = isHorizontal
+        ? Math.abs(to.x - from.x)
+        : Math.abs(to.y - from.y);
+
+      const angle = isHorizontal
+        ? (to.x > from.x ? 0 : 180)
+        : (to.y > from.y ? 90 : -90);
+
+      const animate = () => {
         if (!isAnimating.current) return;
-        
-        const elapsed = currentTime - startTime;
-        const progress = Math.min(elapsed / segmentDuration, 1);
 
-        // Calculate current position
-        const currentX = segment.from.x + (segment.to.x - segment.from.x) * progress;
-        const currentY = segment.from.y + (segment.to.y - segment.from.y) * progress;
+        progress += step;
+        const ratio = Math.min(progress / distance, 1);
 
-        // Calculate angle for arrow rotation
-        const dx = segment.to.x - segment.from.x;
-        const dy = segment.to.y - segment.from.y;
-        const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+        const currentX = from.x + (to.x - from.x) * ratio;
+        const currentY = from.y + (to.y - from.y) * ratio;
 
-        // Update arrow position
         setArrowPosition({ x: currentX, y: currentY, angle });
 
-        // Update solid lines
-        setSolidLines(prev => {
-          const newLines = [];
-          
-          // Add all completed segments
-          for (let i = 0; i < currentSegment; i++) {
-            newLines.push({
-              x1: segments[i].from.x,
-              y1: segments[i].from.y,
-              x2: segments[i].to.x,
-              y2: segments[i].to.y
-            });
-          }
-          
-          // Add current segment in progress
-          if (currentSegment < segments.length) {
-            newLines.push({
-              x1: segment.from.x,
-              y1: segment.from.y,
-              x2: currentX,
-              y2: currentY
-            });
-          }
-          
+        setSolidLines((prev) => {
+          const newLines = [...prev];
+          newLines[currentSegment] = {
+            x1: from.x,
+            y1: from.y,
+            x2: currentX,
+            y2: currentY,
+          };
           return newLines;
         });
 
-        if (progress < 1) {
+        if (ratio < 1) {
           animationRef.current = requestAnimationFrame(animate);
         } else {
-          // Move to next segment
           currentSegment++;
-          if (currentSegment < segments.length) {
-            setTimeout(() => {
-              if (isAnimating.current) {
-                animateSegment();
-              }
-            }, 50); // Small delay between segments
-          } else {
-            isAnimating.current = false;
-          }
+          animationRef.current = requestAnimationFrame(animateSegment);
         }
       };
 
       animationRef.current = requestAnimationFrame(animate);
     };
 
-    // Start the animation
+    isAnimating.current = true;
+    setSolidLines([]);
     animateSegment();
   };
 
-  // Reset function for clearing everything
+  // --- Handle grid clicks ---
+// --- Handle grid clicks ---
+// --- Handle grid clicks ---
+const handleLineClick = (x, y, lineType, lineIndex) => {
+  if (isAnimating.current) return;
+
+  const gridWidth = Math.floor(dimensions.width / spacing) * spacing;
+  const gridHeight = Math.floor(dimensions.height / spacing) * spacing;
+
+  let actualX, actualY;
+
+  if (lineType === "horizontal") {
+    // Raw mouse X, fixed Y at this row
+    actualX = Math.max(0, Math.min(x, gridWidth));
+    actualY = lineIndex * spacing;
+  } else {
+    // Raw mouse Y, fixed X at this column
+    actualX = lineIndex * spacing;
+    actualY = Math.max(0, Math.min(y, gridHeight));
+  }
+
+  const clickedPoint = { x: actualX, y: actualY, lineType, lineIndex };
+
+  if (!sourcePoint) {
+    // First click → set source
+    setSourcePoint(clickedPoint);
+    setDestinationPoint(null);
+    setSolidLines([]);
+    setArrowPosition(null);
+  } else if (
+    sourcePoint.x === clickedPoint.x &&
+    sourcePoint.y === clickedPoint.y
+  ) {
+    // Clicked same as source → reset
+    resetAnimation();
+  } else if (!destinationPoint) {
+    // Second click → set destination
+    setDestinationPoint(clickedPoint);
+  } else if (
+    destinationPoint.x === clickedPoint.x &&
+    destinationPoint.y === clickedPoint.y
+  ) {
+    // Clicked same as destination → reset
+    resetAnimation();
+  } else {
+    // Change destination
+    setDestinationPoint(clickedPoint);
+  }
+};
+
+
+
+
+  // --- Watch for new source/destination ---
+  useEffect(() => {
+    if (!sourcePoint || !destinationPoint) return;
+
+    const path = computeGridPath(sourcePoint, destinationPoint);
+    setSolidLines([]);
+    setArrowPosition({ x: path[0].x, y: path[0].y, angle: 0 });
+    animateArrow(path);
+
+    return () => {
+      isAnimating.current = false;
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    };
+  }, [sourcePoint, destinationPoint]);
+
+  // --- Reset everything ---
   const resetAnimation = () => {
     isAnimating.current = false;
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current);
-    }
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
     setSourcePoint(null);
     setDestinationPoint(null);
     setSolidLines([]);
     setArrowPosition(null);
   };
 
+  // --- Render ---
   return (
     <GridSVG
       width={dimensions.width}
@@ -280,7 +235,7 @@ const GridController = () => {
       spacing={spacing}
       onLineClick={handleLineClick}
     >
-      {/* Solid black lines showing the path */}
+      {/* Solid path */}
       {solidLines.map((line, i) => (
         <line
           key={`line-${i}`}
@@ -294,28 +249,20 @@ const GridController = () => {
 
       {/* Source marker */}
       {sourcePoint && (
-        <Marker 
-          x={sourcePoint.x} 
-          y={sourcePoint.y} 
-          type="source" 
-        />
+        <Marker x={sourcePoint.x} y={sourcePoint.y} type="source" />
       )}
-      
+
       {/* Destination marker */}
       {destinationPoint && (
-        <Marker 
-          x={destinationPoint.x} 
-          y={destinationPoint.y} 
-          type="destination" 
-        />
+        <Marker x={destinationPoint.x} y={destinationPoint.y} type="destination" />
       )}
 
       {/* Animated arrow */}
       {arrowPosition && (
-        <Arrow 
-          x={arrowPosition.x} 
-          y={arrowPosition.y} 
-          angle={arrowPosition.angle || 0}
+        <Arrow
+          x={arrowPosition.x}
+          y={arrowPosition.y}
+          angle={arrowPosition.angle}
         />
       )}
     </GridSVG>

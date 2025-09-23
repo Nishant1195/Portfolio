@@ -1,6 +1,25 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 
-const GridSVG = ({ width, height, spacing, onLineClick, children }) => {
+const GridSVG = ({ spacing = 50, onLineClick, children }) => {
+  const [dimensions, setDimensions] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+
+  // Update grid size when screen resizes
+  useEffect(() => {
+    const handleResize = () => {
+      setDimensions({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const { width, height } = dimensions;
   const cols = Math.ceil(width / spacing);
   const rows = Math.ceil(height / spacing);
 
@@ -8,7 +27,7 @@ const GridSVG = ({ width, height, spacing, onLineClick, children }) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    onLineClick(x, y, lineType, index);
+    onLineClick?.(x, y, lineType, index);
   };
 
   const verticalLines = Array.from({ length: cols + 1 }, (_, i) => (
@@ -36,7 +55,11 @@ const GridSVG = ({ width, height, spacing, onLineClick, children }) => {
   ));
 
   return (
-    <svg width={width} height={height} className="absolute top-0 left-0 w-full h-full">
+    <svg
+      width={width}
+      height={height}
+      className="absolute top-0 left-0 w-full h-full"
+    >
       {verticalLines}
       {horizontalLines}
       {children}
