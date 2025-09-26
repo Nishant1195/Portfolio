@@ -1,68 +1,165 @@
-// src/pages/Home.jsx
-import React, { useRef } from "react";
-import PageContainer from "../components/PageContainer"; // adjust path if needed
-import NavButton from "../components/NavButton";         // adjust path if needed
-import GridController from "../components/GridController"; // adjust path if needed
+import React, { useRef, useState, useMemo, useEffect } from "react";
+import PageContainer from "../components/PageContainer";
+import NavButton from "../components/NavButton";
+import GridController from "../components/GridController";
 
 export default function Home() {
-  // wrapper refs for measurement
   const sourceRef = useRef(null);
-  const buttonWrappersRef = useRef([]); // we'll populate with DOM nodes
+  const [anchors, setAnchors] = useState(null);
+  const [dimensions, setDimensions] = useState({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1200,
+    height: typeof window !== 'undefined' ? window.innerHeight : 800
+  });
 
   const navButtons = [
-    { label: "Projects", onClick: () => console.log("Projects") },
-    { label: "Skills", onClick: () => console.log("Skills") },
-    { label: "Contact", onClick: () => console.log("Contact") },
-    { label: "Blog", onClick: () => console.log("Blog") },
-    { label: "About", onClick: () => console.log("About") },
+    { label: "Projects", onClick: () => console.log("Projects clicked") },
+    { label: "Skills", onClick: () => console.log("Skills clicked") },
+    { label: "Contact", onClick: () => console.log("Contact clicked") },
+    { label: "Resume", onClick: () => console.log("Resume clicked") },
+    { label: "About", onClick: () => console.log("About clicked") },
   ];
 
-  // positions (example radial-ish positions around center)
-  const positions = [
-    { top: "12%", left: "50%", transform: "translate(-50%, 0)" },   // top
-    { top: "50%", left: "88%", transform: "translate(-50%, -50%)" }, // right
-    { top: "88%", left: "50%", transform: "translate(-50%, -100%)" },// bottom
-    { top: "50%", left: "12%", transform: "translate(-50%, -50%)" }, // left
-    { top: "22%", left: "22%", transform: "translate(-50%, -50%)" }, // top-left
-  ];
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setDimensions({
+        width: window.innerWidth,
+        height: window.innerHeight
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Calculate target positions based on 80px grid spacing
+  const customTargets = useMemo(() => {
+    const gridSpacing = 80;
+    const centerX = dimensions.width / 2;
+    const centerY = dimensions.height / 2;
+    
+    // Account for the welcome container size (480px x 240px)
+    const containerWidth = 480;
+    const containerHeight = 240;
+
+    // Calculate exact positions for each button with proper spacing
+    const targets = [
+      {
+        // Projects - Left side, upper position
+        x: centerX - (containerWidth / 2) - (gridSpacing * 3),
+        y: centerY - (gridSpacing * 1),
+        label: "Projects",
+        buttonIndex: 0
+      },
+      {
+        // Skills - Right side, upper position
+        x: centerX + (containerWidth / 2) + (gridSpacing * 3),
+        y: centerY - (gridSpacing * 1),
+        label: "Skills",
+        buttonIndex: 1
+      },
+      {
+        // Contact - Left side, lower position
+        x: centerX - (containerWidth / 2) - (gridSpacing * 3),
+        y: centerY + (gridSpacing * 1),
+        label: "Contact",
+        buttonIndex: 2
+      },
+      {
+        // Resume - Right side, lower position
+        x: centerX + (containerWidth / 2) + (gridSpacing * 3),
+        y: centerY + (gridSpacing * 1),
+        label: "Resume",
+        buttonIndex: 3
+      },
+      {
+        // About - Top center
+        x: centerX,
+        y: centerY - (containerHeight / 2) - (gridSpacing * 2),
+        label: "About",
+        buttonIndex: 4
+      }
+    ];
+
+    return targets;
+  }, [dimensions.width, dimensions.height]);
 
   return (
-    <div className="relative w-full h-screen bg-gray-50">
-      {/* GridController in background: pass sourceRef and the array of DOM nodes */}
+    <div className="relative w-full h-screen bg-gray-100 overflow-hidden">
+      {/* Grid Controller for animations */}
       <GridController
-  sourceRef={sourceRef}
-  targetRefs={buttonWrappersRef.current}
-  spacing={81}
-  stagger={350}
-  loop={false}         // run once
-  persistTrails={true} // keep final trails static
-  stepPx={6}
-  debug={true}
-/>
+        sourceRef={sourceRef}
+        spacing={80}
+        stepPx={8}
+        stagger={400}
+        loop={true}
+        persistTrails={true}
+        targets={customTargets}
+        onAnchorsComputed={setAnchors}
+        showAnchors={false}
+      />
 
-
-      {/* Center container (wrap with ref so GridController can measure) */}
+      {/* Central Welcome Container */}
       <div
         ref={sourceRef}
-        style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 30 }}
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20"
       >
-        <PageContainer size="medium" variant="floating" padding="xl" rounded>
-          <h1 className="text-4xl font-bold mb-2">Welcome</h1>
-          <p className="text-sm text-gray-600">Explore my site</p>
+        <PageContainer
+          size="custom"
+          variant="floating"
+          padding="xl"
+          rounded={true}
+          shadow={true}
+          shadowType="solid"
+          border={true}
+          borderWidth="4"
+          borderColor="black"
+          background="white"
+          customWidth="480px"
+          customHeight="240px"
+          animation="fade"
+        >
+          <div className="text-center">
+            <h1 className="text-4xl font-bold mb-4 jersey-font text-black">
+              Welcome
+            </h1>
+            <p className="text-gray-600 text-lg pixelify-font">
+              Choose where to go
+            </p>
+          </div>
         </PageContainer>
       </div>
 
-      {/* Render nav buttons and attach refs to wrappers */}
-      {navButtons.map((btn, i) => {
-        const pos = positions[i] || { top: "50%", left: "50%", transform: "translate(-50%,-50%)" };
+      {/* Navigation Buttons positioned at target locations */}
+      {anchors?.targets?.map((target) => {
+        const button = navButtons[target.buttonIndex];
+        if (!button) return null;
+
         return (
           <div
-            key={`${btn.label}-${i}`}
-            ref={(el) => (buttonWrappersRef.current[i] = el)}
-            style={{ position: "absolute", top: pos.top, left: pos.left, transform: pos.transform, zIndex: 40 }}
+            key={`nav-${target.label}`}
+            className="absolute z-30"
+            style={{
+              left: target.x,
+              top: target.y,
+              transform: 'translate(-50%, -50%)'
+            }}
           >
-            <NavButton onClick={btn.onClick} variant="floating" shadow>
-              {btn.label}
+            <NavButton
+              onClick={button.onClick}
+              variant="floating"
+              size="medium"
+              shadow={true}
+              shadowType="solid"
+              border={true}
+              borderWidth="2"
+              borderColor="black"
+              background="white"
+              textColor="black"
+              animation="hover"
+              className="font-bold uppercase tracking-wide min-w-[100px] pixelify-font"
+            >
+              {button.label}
             </NavButton>
           </div>
         );

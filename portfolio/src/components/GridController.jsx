@@ -1,7 +1,5 @@
-// GridController.jsx (fixed: prevents unwanted re-runs)
+// src/components/GridController.jsx
 import React, { useEffect, useRef, useState } from "react";
-
-const defaultSpacing = 81;
 
 const Marker = ({ x, y }) => (
   <circle cx={x} cy={y} r={4} className="fill-black stroke-black stroke-[1]" />
@@ -16,95 +14,155 @@ const Arrow = ({ x, y, angle }) => (
 
 export default function GridController({
   sourceRef,
-  targetRefs = [],
-  spacing = defaultSpacing,
+  spacing = 80,
   stagger = 500,
   loop = false,
   stepPx = 6,
   showAnchors = false,
   debug = false,
   persistTrails = true,
+  numTargets = 5, // fallback for default targets
+  targets = null, // custom targets prop
+  onAnchorsComputed,
 }) {
   const svgRef = useRef(null);
-  const running = useRef(false);
-  const runOnceRef = useRef(false);     // <- prevents re-running when loop === false
-  const [dims, setDims] = useState({ width: window.innerWidth, height: window.innerHeight });
+  const [dims, setDims] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
 
-  const [partialLines, setPartialLines] = useState([]);
   const [completedPaths, setCompletedPaths] = useState([]);
+  const [partialLines, setPartialLines] = useState([]);
   const [arrowPos, setArrowPos] = useState(null);
   const [anchors, setAnchors] = useState([]);
 
+  const running = useRef(false);
+  const runOnceRef = useRef(false);
+
+  // Resize handling
   useEffect(() => {
-    const onResize = () => setDims({ width: window.innerWidth, height: window.innerHeight });
+    const onResize = () =>
+      setDims({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // Accept either array of DOM nodes or array of refs or a ref object that contains .current array
-  const getTargetElements = () => {
-    // If caller passed a ref object (like buttonWrappersRef), try to use .current
-    if (targetRefs && typeof targetRefs === "object" && "current" in targetRefs && Array.isArray(targetRefs.current)) {
-      return targetRefs.current.filter(Boolean);
-    }
-
-    if (!Array.isArray(targetRefs)) return [];
-    return targetRefs
-      .map((r) => {
-        if (!r) return null;
-        if (typeof r === "object" && r.nodeType) return r; // DOM node
-        if (typeof r === "object" && "current" in r) return r.current; // ref object
-        return r;
-      })
-      .filter(Boolean);
-  };
-
   const snap = (v) => Math.round(v / spacing) * spacing;
 
-  const measure = () => {
-    const svgEl = svgRef.current;
-    if (!svgEl) {
-      if (debug) console.log("GridController: svgRef not ready");
-      return null;
-    }
-    const svgRect = svgEl.getBoundingClientRect();
-    const measureElCenter = (el) => {
-      if (!el || !el.getBoundingClientRect) return null;
-      const r = el.getBoundingClientRect();
-      const cx = (r.left + r.right) / 2 - svgRect.left;
-      const cy = (r.top + r.bottom) / 2 - svgRect.top;
-      return { cx: Math.max(0, Math.min(cx, svgRect.width)), cy: Math.max(0, Math.min(cy, svgRect.height)) };
+  const measureSource = () => {
+    if (!svgRef.current || !sourceRef?.current) return null;
+    const svgRect = svgRef.current.getBoundingClientRect();
+    const r = sourceRef.current.getBoundingClientRect();
+    const cx = (r.left + r.right) / 2 - svgRect.left;
+    const cy = (r.top + r.bottom) / 2 - svgRect.top;
+    return {
+      x: snap(Math.max(0, Math.min(cx, svgRect.width))),
+      y: snap(Math.max(0, Math.min(cy, svgRect.height))),
     };
-
-    const srcCenter = measureElCenter(sourceRef?.current);
-    const targets = getTargetElements().map(measureElCenter).filter(Boolean);
-    if (debug) console.log("GridController.measure -> srcCenter:", srcCenter, "targets:", targets);
-    return { svgRect, srcCenter, targets };
   };
 
-  const computeGridPath = (s, d) => {
-    const a = [{ x: s.x, y: s.y }, { x: d.x, y: s.y }, { x: d.x, y: d.y }];
-    const b = [{ x: s.x, y: s.y }, { x: s.x, y: d.y }, { x: d.x, y: d.y }];
-    const aFirst = Math.abs(d.x - s.x);
-    const bFirst = Math.abs(d.y - s.y);
-    return aFirst >= bFirst ? a : b;
+  const generateDefaultTargets = (source) => {
+    // Fallback default targets if none provided
+    return [
+      { x: source.x + spacing * 4, y: source.y },
+      { x: source.x - spacing * 4, y: source.y },
+      { x: source.x, y: source.y + spacing * 3 },
+      { x: source.x + spacing * 3, y: source.y + spacing * 2 },
+      { x: source.x - spacing * 2, y: source.y - spacing * 2 },
+    ].slice(0, numTargets);
+  };
+
+  const processTargets = (source, customTargets) => {
+    if (customTargets && Array.isArray(customTargets)) {
+      // Use custom targets with absolute positioning (don't snap to grid for better precision)
+      return customTargets.map(target => ({
+        x: Math.max(0, Math.min(target.x, dims.width)),
+        y: Math.max(0, Math.min(target.y, dims.height)),
+        // Preserve any additional properties like labels, ids, etc.
+        ...target
+      }));
+    }
+    // Fall back to default targets
+    return generateDefaultTargets(source);
+  };
+
+  const computeGridPath = (s, d, pathIndex = 0, totalPaths = 1) => {
+    // Use middle grid lines for cleaner routing
+    const pathStrategies = [
+      // Path 0 - Projects (upper left): Use upper middle horizontal line
+      () => [
+        { x: s.x, y: s.y },
+        { x: s.x, y: s.y - spacing },
+        { x: d.x, y: s.y - spacing },
+        { x: d.x, y: d.y }
+      ],
+      // Path 1 - Skills (upper right): Use middle vertical line on right
+      () => [
+        { x: s.x, y: s.y },
+        { x: s.x + spacing, y: s.y },
+        { x: s.x + spacing, y: d.y },
+        { x: d.x, y: d.y }
+      ],
+      // Path 2 - Contact (lower left): Use lower middle horizontal line
+      () => [
+        { x: s.x, y: s.y },
+        { x: s.x, y: s.y + spacing },
+        { x: d.x, y: s.y + spacing },
+        { x: d.x, y: d.y }
+      ],
+      // Path 3 - Resume (lower right): Use different middle vertical line on right
+      () => [
+        { x: s.x, y: s.y },
+        { x: s.x + spacing * 2, y: s.y },
+        { x: s.x + spacing * 2, y: d.y },
+        { x: d.x, y: d.y }
+      ],
+      // Path 4 - About (top center): Use middle vertical line going up
+      () => [
+        { x: s.x, y: s.y },
+        { x: s.x, y: d.y }
+      ]
+    ];
+
+    // Use the path strategy that corresponds to the button index
+    const strategy = pathStrategies[pathIndex] || pathStrategies[0];
+    const path = strategy();
+    
+    // Snap all points to grid and ensure they're within bounds
+    return path.map(point => ({
+      x: snap(Math.max(spacing, Math.min(point.x, dims.width - spacing))),
+      y: snap(Math.max(spacing, Math.min(point.y, dims.height - spacing)))
+    }));
   };
 
   const animatePath = (path) =>
     new Promise((resolve) => {
       if (!path || path.length < 2) return resolve(null);
-
       let seg = 0;
-      const frames = { raf: null };
 
       const animateSeg = () => {
         if (seg >= path.length - 1) {
-          const lastSegFrom = path[path.length - 2];
-          const lastSegTo = path[path.length - 1];
-          const dxF = lastSegTo.x - lastSegFrom.x;
-          const dyF = lastSegTo.y - lastSegFrom.y;
-          const finalAngle = Math.atan2(dyF, dxF) * (180 / Math.PI);
-          resolve({ fullPath: path, finalAngle });
+          // Calculate final arrow angle pointing toward the destination
+          const lastFrom = path[path.length - 2];
+          const lastTo = path[path.length - 1];
+          const dx = lastTo.x - lastFrom.x;
+          const dy = lastTo.y - lastFrom.y;
+          
+          // Ensure we have a valid direction vector
+          let finalAngle;
+          if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
+            finalAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+          } else {
+            // If the last segment is too short, look at the overall direction
+            const overallDx = path[path.length - 1].x - path[0].x;
+            const overallDy = path[path.length - 1].y - path[0].y;
+            finalAngle = Math.atan2(overallDy, overallDx) * (180 / Math.PI);
+          }
+          
+          resolve({
+            fullPath: path,
+            finalAngle: finalAngle,
+          });
           return;
         }
 
@@ -113,6 +171,14 @@ export default function GridController({
         const dx = to.x - from.x;
         const dy = to.y - from.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        // Skip zero-length segments
+        if (dist < 0.1) {
+          seg++;
+          requestAnimationFrame(animateSeg);
+          return;
+        }
+        
         const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
         let progress = 0;
@@ -130,129 +196,88 @@ export default function GridController({
           });
 
           if (ratio < 1) {
-            frames.raf = requestAnimationFrame(step);
+            requestAnimationFrame(step);
           } else {
-            // finalize segment
             setPartialLines((prev) => {
               const copy = [...prev];
               copy[seg] = { x1: from.x, y1: from.y, x2: to.x, y2: to.y };
               return copy;
             });
-            seg += 1;
-            frames.raf = requestAnimationFrame(animateSeg);
+            seg++;
+            requestAnimationFrame(animateSeg);
           }
         };
 
-        frames.raf = requestAnimationFrame(step);
+        requestAnimationFrame(step);
       };
 
       animateSeg();
     });
 
   const runSequence = async () => {
-    if (running.current) {
-      if (debug) console.log("GridController: runSequence called but already running");
-      return;
-    }
-
-    // If loop === false and we've already run once, do not run again
-    if (!loop && runOnceRef.current) {
-      if (debug) console.log("GridController: already ran once and loop=false -> skipping");
-      return;
-    }
-
+    if (running.current || (!loop && runOnceRef.current)) return;
     running.current = true;
-    if (debug) console.log("GridController: starting runSequence");
 
-    const m = measure();
-    if (!m || !m.srcCenter || !m.targets || m.targets.length === 0) {
-      if (debug) console.log("GridController: nothing to animate (no source/targets)");
+    const source = measureSource();
+    if (!source) {
       running.current = false;
       return;
     }
 
-    const sourceSnap = { x: snap(m.srcCenter.cx), y: snap(m.srcCenter.cy) };
-    const targetSnaps = m.targets.map((t) => ({ x: snap(t.cx), y: snap(t.cy) }));
-    setAnchors([{ ...sourceSnap, label: "source" }, ...targetSnaps.map((s, i) => ({ ...s, label: `t${i}` }))]);
+    // Process targets (custom or default)
+    const processedTargets = processTargets(source, targets);
 
-    const paths = targetSnaps.map((tSnap) => computeGridPath(sourceSnap, tSnap));
+    setAnchors([{ ...source, label: "source" }, ...processedTargets]);
 
+    // Send usable anchors to parent
+    onAnchorsComputed?.({ source, targets: processedTargets });
+
+    // Create unique paths for each target
+    const paths = processedTargets.map((target, index) => 
+      computeGridPath(source, target, index, processedTargets.length)
+    );
+    
     if (!persistTrails) setCompletedPaths([]);
 
     do {
       for (let i = 0; i < paths.length; i++) {
+        const path = paths[i];
         setPartialLines([]);
-        setArrowPos({ x: paths[i][0].x, y: paths[i][0].y, angle: 0 });
-
-        await new Promise((r) => setTimeout(r, i === 0 ? 0 : stagger));
-        const result = await animatePath(paths[i]);
-
+        setArrowPos({ x: path[0].x, y: path[0].y, angle: 0 });
+        await new Promise((r) => setTimeout(r, stagger));
+        const result = await animatePath(path);
         if (result && persistTrails) {
-          setCompletedPaths((prev) => [...prev, { path: result.fullPath, finalAngle: result.finalAngle }]);
+          setCompletedPaths((prev) => [
+            ...prev,
+            { path: result.fullPath, finalAngle: result.finalAngle, pathIndex: i },
+          ]);
         }
-
         setArrowPos(null);
         setPartialLines([]);
         await new Promise((r) => setTimeout(r, 120));
       }
-
       if (!loop) break;
-      await new Promise((r) => setTimeout(r, 600));
-    } while (loop && running.current);
+    } while (loop);
 
-    // mark that we've run once (prevents re-run when loop is false)
     runOnceRef.current = true;
     running.current = false;
-    if (debug) console.log("GridController: runSequence finished");
   };
 
-  // Poll until svg + source + targets exist; only call runSequence if allowed
   useEffect(() => {
-    let cancelled = false;
-    let attempts = 0;
-    const poll = () => {
-      attempts += 1;
-      const svgReady = !!svgRef.current;
-      const srcReady = !!(sourceRef && sourceRef.current);
-      const targetsReady = getTargetElements().length > 0;
+    runSequence();
+  }, [dims, targets]); // Add targets to dependency array
 
-      if (debug) {
-        // helpful debug
-        console.log("GridController.poll -> svgReady:", svgReady, "srcReady:", srcReady, "targetsReady:", targetsReady, "runOnce:", runOnceRef.current);
-      }
-
-      // Only trigger runSequence when either loop === true or we haven't run yet
-      if (svgReady && srcReady && targetsReady && (loop || !runOnceRef.current)) {
-        if (!cancelled) runSequence();
-      } else if (attempts < 25 && !cancelled) {
-        setTimeout(poll, 100);
-      } else {
-        if (debug) console.log("GridController: poll finished (no start).");
-      }
-    };
-    const t = setTimeout(poll, 60);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-      running.current = false;
-    };
-  // intentionally include loop so changing it will affect behavior
-  }, [sourceRef, targetRefs, dims, loop, persistTrails]);
-
-  useEffect(() => () => { running.current = false; }, []);
-
-  const renderFullPath = (path, keyPrefix = "") =>
-    path.map((p, idx) => {
-      const from = path[idx];
-      const to = path[idx + 1];
-      if (!to) return null;
+  const renderFullPath = (path, key) =>
+    path.map((p, i) => {
+      const next = path[i + 1];
+      if (!next) return null;
       return (
         <line
-          key={`${keyPrefix}-seg-${idx}`}
-          x1={from.x}
-          y1={from.y}
-          x2={to.x}
-          y2={to.y}
+          key={`${key}-seg-${i}`}
+          x1={p.x}
+          y1={p.y}
+          x2={next.x}
+          y2={next.y}
           stroke="black"
           strokeWidth={2}
           strokeLinecap="round"
@@ -265,29 +290,65 @@ export default function GridController({
       ref={svgRef}
       width={dims.width}
       height={dims.height}
-      className="absolute top-0 left-0 w-full h-full bg-transparent pointer-events-none"
+      className="absolute top-0 left-0 w-full h-full pointer-events-none"
     >
+      {/* Grid background */}
       {Array.from({ length: Math.ceil(dims.width / spacing) + 1 }, (_, i) => (
-        <line key={`v-${i}`} x1={i * spacing} y1={0} x2={i * spacing} y2={dims.height} stroke="black" strokeWidth={1} strokeDasharray="2,3" />
+        <line
+          key={`v-${i}`}
+          x1={i * spacing}
+          y1={0}
+          x2={i * spacing}
+          y2={dims.height}
+          stroke="black"
+          strokeWidth={1}
+          strokeDasharray="2,3"
+        />
       ))}
       {Array.from({ length: Math.ceil(dims.height / spacing) + 1 }, (_, i) => (
-        <line key={`h-${i}`} x1={0} y1={i * spacing} x2={dims.width} y2={i * spacing} stroke="black" strokeWidth={1} strokeDasharray="2,3" />
+        <line
+          key={`h-${i}`}
+          x1={0}
+          y1={i * spacing}
+          x2={dims.width}
+          y2={i * spacing}
+          stroke="black"
+          strokeWidth={1}
+          strokeDasharray="2,3"
+        />
       ))}
 
+      {/* Completed paths + arrows */}
       {completedPaths.map((cp, i) => (
-        <g key={`completed-${i}`}>
-          {renderFullPath(cp.path, `completed-${i}`)}
-          {cp.path.length >= 2 && <Arrow x={cp.path[cp.path.length - 1].x} y={cp.path[cp.path.length - 1].y} angle={cp.finalAngle} />}
+        <g key={`cp-${i}`}>
+          {renderFullPath(cp.path, `cp-${i}`)}
+          <Arrow
+            x={cp.path[cp.path.length - 1].x}
+            y={cp.path[cp.path.length - 1].y}
+            angle={cp.finalAngle}
+          />
         </g>
       ))}
 
+      {/* Partial path */}
       {partialLines.map((ln, i) =>
-        ln ? <line key={`partial-${i}`} x1={ln.x1} y1={ln.y1} x2={ln.x2} y2={ln.y2} stroke="black" strokeWidth={2} strokeLinecap="round" /> : null
+        ln ? (
+          <line
+            key={`pl-${i}`}
+            x1={ln.x1}
+            y1={ln.y1}
+            x2={ln.x2}
+            y2={ln.y2}
+            stroke="black"
+            strokeWidth={2}
+          />
+        ) : null
       )}
-
       {arrowPos && <Arrow x={arrowPos.x} y={arrowPos.y} angle={arrowPos.angle} />}
 
-      {showAnchors && anchors.map((a, i) => <Marker key={`a-${i}`} x={a.x} y={a.y} />)}
+      {/* Debug markers */}
+      {showAnchors &&
+        anchors.map((a, i) => <Marker key={`a-${i}`} x={a.x} y={a.y} />)}
     </svg>
   );
 }
