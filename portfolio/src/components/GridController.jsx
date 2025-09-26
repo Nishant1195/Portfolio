@@ -6,7 +6,7 @@ const Marker = ({ x, y }) => (
 );
 const Arrow = ({ x, y, angle }) => (
   <polygon
-    points="0,-8 12,0 0,8 -4,0"
+    points="0,-6 10,0 0,6"
     className="fill-black stroke-black stroke-[1]"
     transform={`translate(${x}, ${y}) rotate(${angle})`}
   />
@@ -86,77 +86,113 @@ export default function GridController({
     return generateDefaultTargets(source);
   };
 
-  const computeGridPath = (s, d, pathIndex = 0, totalPaths = 1) => {
-    // Use middle grid lines for cleaner routing
-    const pathStrategies = [
-      // Path 0 - Projects (upper left): Use upper middle horizontal line
-      () => [
-        { x: s.x, y: s.y },
-        { x: s.x, y: s.y - spacing },
-        { x: d.x, y: s.y - spacing },
-        { x: d.x, y: d.y }
-      ],
-      // Path 1 - Skills (upper right): Use middle vertical line on right
-      () => [
-        { x: s.x, y: s.y },
-        { x: s.x + spacing, y: s.y },
-        { x: s.x + spacing, y: d.y },
-        { x: d.x, y: d.y }
-      ],
-      // Path 2 - Contact (lower left): Use lower middle horizontal line
-      () => [
-        { x: s.x, y: s.y },
-        { x: s.x, y: s.y + spacing },
-        { x: d.x, y: s.y + spacing },
-        { x: d.x, y: d.y }
-      ],
-      // Path 3 - Resume (lower right): Use different middle vertical line on right
-      () => [
-        { x: s.x, y: s.y },
-        { x: s.x + spacing * 2, y: s.y },
-        { x: s.x + spacing * 2, y: d.y },
-        { x: d.x, y: d.y }
-      ],
-      // Path 4 - About (top center): Use middle vertical line going up
-      () => [
-        { x: s.x, y: s.y },
-        { x: s.x, y: d.y }
-      ]
-    ];
+const computeGridPath = (s, d, pathIndex = 0, totalPaths = 1) => {
+  // Grid/container settings
+  const containerWidth = 480;
+  const containerHeight = 240;
+  const containerLeft = s.x - containerWidth / 2;
+  const containerRight = s.x + containerWidth / 2;
+  const containerTop = s.y - containerHeight / 2;
+  const containerBottom = s.y + containerHeight / 2;
 
-    // Use the path strategy that corresponds to the button index
-    const strategy = pathStrategies[pathIndex] || pathStrategies[0];
-    const path = strategy();
-    
-    // Snap all points to grid and ensure they're within bounds
-    return path.map(point => ({
-      x: snap(Math.max(spacing, Math.min(point.x, dims.width - spacing))),
-      y: snap(Math.max(spacing, Math.min(point.y, dims.height - spacing)))
-    }));
-  };
+  // Middle lines
+  const upperMiddleLine = containerTop + containerHeight / 3;
+  const lowerMiddleLine = containerBottom - containerHeight / 3;
+  const leftMiddleLine = containerLeft + containerWidth / 3;
+  const rightMiddleLine = containerRight - containerWidth / 3;
 
-  const animatePath = (path) =>
+  // Snap target’s grid position
+  const targetGridX = snap(d.x);
+  const targetGridY = snap(d.y);
+
+  const pathStrategies = [
+    // 0 - Projects (left, top)
+    () => [
+      { x: s.x, y: s.y },
+      { x: leftMiddleLine, y: s.y },
+      { x: leftMiddleLine, y: upperMiddleLine },
+      { x: targetGridX, y: upperMiddleLine },
+      { x: targetGridX, y: targetGridY } // stop at grid line just outside button
+    ],
+
+    // 1 - Skills (right, top)
+    () => [
+      { x: s.x, y: s.y },
+      { x: rightMiddleLine, y: s.y },
+      { x: rightMiddleLine, y: upperMiddleLine },
+      { x: targetGridX, y: upperMiddleLine },
+      { x: targetGridX, y: targetGridY }
+    ],
+
+    // 2 - Contact (left, bottom)
+    () => [
+      { x: s.x, y: s.y },
+      { x: leftMiddleLine, y: s.y },
+      { x: leftMiddleLine, y: lowerMiddleLine },
+      { x: targetGridX, y: lowerMiddleLine },
+      { x: targetGridX, y: targetGridY }
+    ],
+
+    // 3 - Resume (right, bottom)
+    () => [
+      { x: s.x, y: s.y },
+      { x: rightMiddleLine, y: s.y },
+      { x: rightMiddleLine, y: lowerMiddleLine },
+      { x: targetGridX, y: lowerMiddleLine },
+      { x: targetGridX, y: targetGridY }
+    ],
+
+   // 4 - About (vertical above)
+() => {
+  const buttonTop = d.y - (d.height || spacing) / 2; 
+  const stopY = snap(buttonTop - spacing); 
+  return [
+    { x: s.x, y: s.y },
+    { x: s.x, y: stopY }
+  ];
+}
+
+  ];
+
+  // Choose strategy
+  const strategy = pathStrategies[pathIndex] || pathStrategies[0];
+  const rawPath = strategy();
+
+  // Snap everything (final point included now, since we stop at grid)
+  return rawPath.map((point) => ({
+    x: snap(Math.max(spacing, Math.min(point.x, dims.width - spacing))),
+    y: snap(Math.max(spacing, Math.min(point.y, dims.height - spacing)))
+  }));
+};
+
+
+
+  const animatePath = (path, actualTarget) =>
     new Promise((resolve) => {
       if (!path || path.length < 2) return resolve(null);
       let seg = 0;
 
       const animateSeg = () => {
         if (seg >= path.length - 1) {
-          // Calculate final arrow angle pointing toward the destination
-          const lastFrom = path[path.length - 2];
-          const lastTo = path[path.length - 1];
-          const dx = lastTo.x - lastFrom.x;
-          const dy = lastTo.y - lastFrom.y;
+          // Calculate final arrow angle pointing toward the ACTUAL target (button), not the grid point
+          const lastGridPoint = path[path.length - 1];
+          const dx = actualTarget.x - lastGridPoint.x;
+          const dy = actualTarget.y - lastGridPoint.y;
           
-          // Ensure we have a valid direction vector
+          // Calculate angle pointing from the last grid point to the actual button
           let finalAngle;
           if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
             finalAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+            // Round to nearest 45 degrees for cleaner angles
+            finalAngle = Math.round(finalAngle / 45) * 45;
           } else {
-            // If the last segment is too short, look at the overall direction
-            const overallDx = path[path.length - 1].x - path[0].x;
-            const overallDy = path[path.length - 1].y - path[0].y;
-            finalAngle = Math.atan2(overallDy, overallDx) * (180 / Math.PI);
+            // Fallback: use the direction of the last path segment
+            const lastFrom = path[path.length - 2];
+            const lastTo = path[path.length - 1];
+            const segDx = lastTo.x - lastFrom.x;
+            const segDy = lastTo.y - lastFrom.y;
+            finalAngle = Math.atan2(segDy, segDx) * (180 / Math.PI);
+            finalAngle = Math.round(finalAngle / 45) * 45;
           }
           
           resolve({
@@ -242,10 +278,15 @@ export default function GridController({
     do {
       for (let i = 0; i < paths.length; i++) {
         const path = paths[i];
+        const actualTarget = processedTargets[i]; // Keep reference to actual button position
+        
         setPartialLines([]);
         setArrowPos({ x: path[0].x, y: path[0].y, angle: 0 });
         await new Promise((r) => setTimeout(r, stagger));
-        const result = await animatePath(path);
+        
+        // Pass the actual target position to animatePath
+        const result = await animatePath(path, actualTarget);
+        
         if (result && persistTrails) {
           setCompletedPaths((prev) => [
             ...prev,

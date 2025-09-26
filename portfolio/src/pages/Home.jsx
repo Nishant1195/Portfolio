@@ -33,56 +33,55 @@ export default function Home() {
   }, []);
 
   // Calculate target positions based on 80px grid spacing
-  const customTargets = useMemo(() => {
-    const gridSpacing = 80;
-    const centerX = dimensions.width / 2;
-    const centerY = dimensions.height / 2;
-    
-    // Account for the welcome container size (480px x 240px)
-    const containerWidth = 480;
-    const containerHeight = 240;
+ const customTargets = useMemo(() => {
+  const gridSpacing = 80;
+  const centerX = dimensions.width / 2;
+  const centerY = dimensions.height / 2;
+  
+  const containerWidth = 480;
+  const containerHeight = 240;
 
-    // Calculate exact positions for each button with proper spacing
-    const targets = [
-      {
-        // Projects - Left side, upper position
-        x: centerX - (containerWidth / 2) - (gridSpacing * 3),
-        y: centerY - (gridSpacing * 1),
-        label: "Projects",
-        buttonIndex: 0
-      },
-      {
-        // Skills - Right side, upper position
-        x: centerX + (containerWidth / 2) + (gridSpacing * 3),
-        y: centerY - (gridSpacing * 1),
-        label: "Skills",
-        buttonIndex: 1
-      },
-      {
-        // Contact - Left side, lower position
-        x: centerX - (containerWidth / 2) - (gridSpacing * 3),
-        y: centerY + (gridSpacing * 1),
-        label: "Contact",
-        buttonIndex: 2
-      },
-      {
-        // Resume - Right side, lower position
-        x: centerX + (containerWidth / 2) + (gridSpacing * 3),
-        y: centerY + (gridSpacing * 1),
-        label: "Resume",
-        buttonIndex: 3
-      },
-      {
-        // About - Top center
-        x: centerX,
-        y: centerY - (containerHeight / 2) - (gridSpacing * 2),
-        label: "About",
-        buttonIndex: 4
-      }
-    ];
+  const targets = [
+    {
+      // Projects - Left side, one grid ABOVE
+      x: centerX - (containerWidth / 2) - (gridSpacing * 3),
+      y: centerY - (gridSpacing * 2),
+      label: "Projects",
+      buttonIndex: 0
+    },
+    {
+      // Skills - Right side, one grid ABOVE
+      x: centerX + (containerWidth / 2) + (gridSpacing * 3),
+      y: centerY - (gridSpacing * 2),
+      label: "Skills",
+      buttonIndex: 1
+    },
+    {
+      // Contact - Left side, one grid BELOW
+      x: centerX - (containerWidth / 2) - (gridSpacing * 3),
+      y: centerY + (gridSpacing * 2),
+      label: "Contact",
+      buttonIndex: 2
+    },
+    {
+      // Resume - Right side, one grid BELOW
+      x: centerX + (containerWidth / 2) + (gridSpacing * 3),
+      y: centerY + (gridSpacing * 2),
+      label: "Resume",
+      buttonIndex: 3
+    },
+    {
+      // About - Top center (unchanged)
+      x: centerX,
+      y: centerY - (containerHeight / 2) - (gridSpacing * 2),
+      label: "About",
+      buttonIndex: 4
+    }
+  ];
 
-    return targets;
-  }, [dimensions.width, dimensions.height]);
+  return targets;
+}, [dimensions.width, dimensions.height]);
+
 
   return (
     <div className="relative w-full h-screen bg-gray-100 overflow-hidden">
@@ -92,7 +91,7 @@ export default function Home() {
         spacing={80}
         stepPx={8}
         stagger={400}
-        loop={true}
+        loop={false} // Changed from true to false
         persistTrails={true}
         targets={customTargets}
         onAnchorsComputed={setAnchors}
