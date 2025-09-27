@@ -12,6 +12,43 @@ const Arrow = ({ x, y, angle }) => (
   />
 );
 
+// Default path strategies for backward compatibility
+const DEFAULT_PATH_STRATEGIES = [
+  // 0 - Default horizontal-then-vertical strategy (left side)
+  (s, d, spacing) => [
+    { x: s.x, y: s.y },
+    { x: d.x, y: s.y },
+    { x: d.x, y: s.y - spacing },
+  ],
+  // 1 - Default horizontal-then-vertical strategy (right side)
+  (s, d, spacing) => [
+    { x: s.x, y: s.y },
+    { x: d.x, y: s.y },
+    { x: d.x, y: s.y - spacing },
+  ],
+  // 2 - Default L-shape downward (left)
+  (s, d, spacing) => [
+    { x: s.x, y: s.y },
+    { x: s.x - spacing, y: s.y },
+    { x: s.x - spacing, y: s.y + spacing },
+    { x: d.x, y: s.y + spacing },
+    { x: d.x, y: d.y }
+  ],
+  // 3 - Default L-shape downward (right)
+  (s, d, spacing) => [
+    { x: s.x, y: s.y },
+    { x: s.x + spacing, y: s.y },
+    { x: s.x + spacing, y: s.y + spacing },
+    { x: d.x, y: s.y + spacing },
+    { x: d.x, y: d.y }
+  ],
+  // 4 - Default direct vertical
+  (s, d, spacing) => [
+    { x: s.x, y: s.y },
+    { x: s.x, y: d.y + spacing/2 }
+  ]
+];
+
 export default function GridController({
   sourceRef,
   spacing = 80,
@@ -23,6 +60,8 @@ export default function GridController({
   persistTrails = true,
   numTargets = 5, // fallback for default targets
   targets = null, // custom targets prop
+  pathStrategies = null, // NEW: Custom path strategies
+  pathConfig = {}, // NEW: Additional path configuration
   onAnchorsComputed,
 }) {
   const svgRef = useRef(null);
@@ -38,6 +77,9 @@ export default function GridController({
 
   const running = useRef(false);
   const runOnceRef = useRef(false);
+
+  // Use custom path strategies or fall back to defaults
+  const activePathStrategies = pathStrategies || DEFAULT_PATH_STRATEGIES;
 
   // Resize handling
   useEffect(() => {
@@ -86,86 +128,36 @@ export default function GridController({
     return generateDefaultTargets(source);
   };
 
-const computeGridPath = (s, d, pathIndex = 0, totalPaths = 1) => {
-  // Grid/container settings
-  const containerWidth = 480;
-  const containerHeight = 240;
-  const containerLeft = s.x - containerWidth / 2;
-  const containerRight = s.x + containerWidth / 2;
-  const containerTop = s.y - containerHeight / 2;
-  const containerBottom = s.y + containerHeight / 2;
+  const computeGridPath = (s, d, pathIndex = 0, totalPaths = 1) => {
+    // Snap target's grid position
+    const targetGridX = snap(d.x);
+    const targetGridY = snap(d.y);
 
-  // Middle lines
-  const upperMiddleLine = containerTop + containerHeight / 3;
-  const lowerMiddleLine = containerBottom - containerHeight / 3;
-  const leftMiddleLine = containerLeft + containerWidth / 3;
-  const rightMiddleLine = containerRight - containerWidth / 3;
+    // Use the appropriate strategy function
+    const strategyIndex = Math.min(pathIndex, activePathStrategies.length - 1);
+    const strategy = activePathStrategies[strategyIndex];
+    
+    // Call the strategy function with source, destination, and spacing
+    const rawPath = strategy(s, { x: targetGridX, y: targetGridY }, spacing, pathConfig);
 
-  // Snap target’s grid position
-  const targetGridX = snap(d.x);
-  const targetGridY = snap(d.y);
-
-  const pathStrategies = [
-    // 0 - Projects (left, top)
-    () => [
-      { x: s.x, y: s.y },
-      { x: leftMiddleLine, y: s.y },
-      { x: leftMiddleLine, y: upperMiddleLine },
-      { x: targetGridX, y: upperMiddleLine },
-      { x: targetGridX, y: targetGridY } // stop at grid line just outside button
-    ],
-
-    // 1 - Skills (right, top)
-    () => [
-      { x: s.x, y: s.y },
-      { x: rightMiddleLine, y: s.y },
-      { x: rightMiddleLine, y: upperMiddleLine },
-      { x: targetGridX, y: upperMiddleLine },
-      { x: targetGridX, y: targetGridY }
-    ],
-
-    // 2 - Contact (left, bottom)
-    () => [
-      { x: s.x, y: s.y },
-      { x: leftMiddleLine, y: s.y },
-      { x: leftMiddleLine, y: lowerMiddleLine },
-      { x: targetGridX, y: lowerMiddleLine },
-      { x: targetGridX, y: targetGridY }
-    ],
-
-    // 3 - Resume (right, bottom)
-    () => [
-      { x: s.x, y: s.y },
-      { x: rightMiddleLine, y: s.y },
-      { x: rightMiddleLine, y: lowerMiddleLine },
-      { x: targetGridX, y: lowerMiddleLine },
-      { x: targetGridX, y: targetGridY }
-    ],
-
-   // 4 - About (vertical above)
-() => {
-  const buttonTop = d.y - (d.height || spacing) / 2; 
-  const stopY = snap(buttonTop - spacing); 
-  return [
-    { x: s.x, y: s.y },
-    { x: s.x, y: stopY }
-  ];
-}
-
-  ];
-
-  // Choose strategy
-  const strategy = pathStrategies[pathIndex] || pathStrategies[0];
-  const rawPath = strategy();
-
-  // Snap everything (final point included now, since we stop at grid)
-  return rawPath.map((point) => ({
-    x: snap(Math.max(spacing, Math.min(point.x, dims.width - spacing))),
-    y: snap(Math.max(spacing, Math.min(point.y, dims.height - spacing)))
-  }));
-};
-
-
+    // Snap everything to grid, but allow custom snapping behavior
+    return rawPath.map((point, index) => {
+      // Check if this path has custom snapping rules
+      const customSnapping = pathConfig.customSnapping?.[pathIndex];
+      
+      if (customSnapping && index === rawPath.length - 1 && customSnapping.skipFinalYSnap) {
+        return {
+          x: snap(Math.max(spacing, Math.min(point.x, dims.width - spacing))),
+          y: Math.max(spacing, Math.min(point.y, dims.height - spacing)) // Don't snap Y for final point
+        };
+      }
+      
+      return {
+        x: snap(Math.max(spacing, Math.min(point.x, dims.width - spacing))),
+        y: snap(Math.max(spacing, Math.min(point.y, dims.height - spacing)))
+      };
+    });
+  };
 
   const animatePath = (path, actualTarget) =>
     new Promise((resolve) => {
